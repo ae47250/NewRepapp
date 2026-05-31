@@ -3,31 +3,117 @@
 <head>
   <meta charset="UTF-8">
   <title>EIA Data Search</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 900px;
+      margin: 30px auto;
+      padding: 20px;
+      line-height: 1.5;
+    }
+
+    h1 {
+      font-size: 36px;
+    }
+
+    input {
+      width: 75%;
+      padding: 12px;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 12px 18px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    .result {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 15px;
+      margin-top: 15px;
+      background: #f9f9f9;
+    }
+
+    .title {
+      font-weight: bold;
+      font-size: 20px;
+      margin-bottom: 5px;
+    }
+
+    .route {
+      color: #555;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .description {
+      margin-top: 8px;
+    }
+  </style>
 </head>
+
 <body>
   <h1>EIA Data Search</h1>
 
-  <p>Use the box below to search for energy data from the U.S. Energy Information Administration.</p>
+  <p>Use the box below to search for energy datasets from the U.S. Energy Information Administration.</p>
 
-  <input id="searchBox" type="text" placeholder="Example: oil prices, electricity, Jordan energy consumption" style="width: 80%; padding: 10px;">
+  <input id="searchBox" type="text" placeholder="Example: Jordan energy consumption">
   <button onclick="searchEIA()">Search</button>
 
-  <pre id="results" style="white-space: pre-wrap; margin-top: 20px;"></pre>
+  <div id="results"></div>
 
   <script>
     async function searchEIA() {
       const query = document.getElementById("searchBox").value;
-      const resultsBox = document.getElementById("results");
+      const resultsDiv = document.getElementById("results");
 
-      resultsBox.textContent = "Searching...";
+      resultsDiv.innerHTML = "<p>Searching...</p>";
 
       try {
         const response = await fetch("/api/search-eia?q=" + encodeURIComponent(query));
         const data = await response.json();
 
-        resultsBox.textContent = JSON.stringify(data, null, 2);
+        if (!data.results || data.results.length === 0) {
+          resultsDiv.innerHTML = "<p>No results found.</p>";
+          return;
+        }
+
+        let html = "<h2>Search results for: " + query + "</h2>";
+
+        data.results.forEach(item => {
+          let description = "";
+
+          if (
+            item.metadata &&
+            item.metadata.response &&
+            item.metadata.response.description
+          ) {
+            description = item.metadata.response.description;
+          } else if (
+            item.metadata &&
+            item.metadata.response &&
+            item.metadata.response.routes
+          ) {
+            description = "This dataset contains " + item.metadata.response.routes.length + " available subcategories.";
+          } else {
+            description = "Metadata returned from EIA.";
+          }
+
+          html += `
+            <div class="result">
+              <div class="title">${item.title}</div>
+              <div class="route">EIA route: /v2/${item.route}</div>
+              <div class="description">${description}</div>
+            </div>
+          `;
+        });
+
+        resultsDiv.innerHTML = html;
+
       } catch (error) {
-        resultsBox.textContent = "Error: " + error.message;
+        resultsDiv.innerHTML = "<p>Error: " + error.message + "</p>";
       }
     }
   </script>
