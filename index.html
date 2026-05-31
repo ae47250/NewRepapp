@@ -261,6 +261,11 @@
           <h2>${escapeHtml(s.title)}</h2>
           <div class="small">
             Country: ${escapeHtml(s.country)} (${escapeHtml(s.countryCode)})<br>
+            Product: ${escapeHtml(s.product || "")}<br>
+            Activity: ${escapeHtml(s.activity || "")}<br>
+            Frequency: ${escapeHtml(s.frequency || "Annual")}<br>
+            Data coverage: ${escapeHtml(s.dataCoverage || "Not available")}<br>
+            Observations available: ${escapeHtml(s.observationsAvailable || "")}<br>
             Unit: ${escapeHtml(s.unit)}<br>
             Source: ${escapeHtml(data.source)}<br>
             ${escapeHtml(data.note || "")}
@@ -303,6 +308,8 @@
             <thead>
               <tr>
                 <th>Variable</th>
+                <th>Coverage</th>
+                <th>Frequency</th>
                 <th>Latest period</th>
                 <th>Latest value</th>
                 <th>Unit</th>
@@ -315,6 +322,8 @@
         html += `
           <tr>
             <td>${escapeHtml(variable.label)}</td>
+            <td>${escapeHtml(variable.dataCoverage || "Not available")}</td>
+            <td>${escapeHtml(variable.frequency || "Annual")}</td>
             <td>${escapeHtml(variable.latestPeriod)}</td>
             <td>${formatNumber(variable.latestValue)}</td>
             <td>${escapeHtml(variable.unit)}</td>
