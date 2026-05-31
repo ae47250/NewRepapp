@@ -58,6 +58,407 @@
       background: #1e40af;
     }
 
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      padding: 18px;
+      margin-top: 18px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    }
+
+    .small {
+      color: #475569;
+      font-size: 14px;
+    }
+
+    .error {
+      color: #991b1b;
+      font-weight: bold;
+    }
+
+    .ai-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 10px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 340px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      background: #ffffff;
+      margin-top: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 14px;
+      background: white;
+    }
+
+    th, td {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #eff6ff;
+    }
+
+    @media (max-width: 700px) {
+      body {
+        padding: 16px;
+      }
+
+      h1 {
+        font-size: 28px;
+      }
+
+      .search-row {
+        flex-direction: column;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <h1>EIA Country Energy Data Search</h1>
+
+  <p class="subtitle">
+    Search country-level energy variables from the U.S. Energy Information Administration.
+    Example: Brazil energy consumption.
+  </p>
+
+  <div class="search-row">
+    <input id="searchBox" type="text" placeholder="Example: Brazil energy consumption">
+    <button id="searchButton" onclick="searchEIA()">Search</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    async function searchEIA() {
+      const query = document.getElementById("searchBox").value.trim();
+      const resultsDiv = document.getElementById("results");
+      const button = document.getElementById("searchButton");
+
+      if (!query) {
+        resultsDiv.innerHTML = "<div class='card error'>Enter a country and variable. Example: Brazil energy consumption.</div>";
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = "Searching...";
+      resultsDiv.innerHTML = "<div class='card'>Interpreting query with AI...</div>";
+
+      try {
+        const interpretation = await interpretQuery(query);
+        const searchQuery = interpretation.searchQuery || query;
+
+        resultsDiv.innerHTML = "<div class='card'>Searching EIA for: <strong>" + escapeHtml(searchQuery) + "</strong></div>";
+
+        const response = await fetch("/api/search-eia?q=" + encodeURIComponent(searchQuery));
+        const data = await response.json();
+
+        data.originalQuery = query;
+        data.interpretation = interpretation;
+
+        if (data.error) {
+          resultsDiv.innerHTML = "<div class='card error'>" + escapeHtml(data.error) + "<br>" + escapeHtml(data.details || "") + "</div>";
+          return;
+        }
+
+        if (data.needsCountry) {
+          resultsDiv.innerHTML = "<div class='card error'>" + escapeHtml(data.message) + "</div>";
+          return;
+        }
+
+        if (!data.selectedSeries || !Array.isArray(data.selectedSeries.points) || data.selectedSeries.points.length === 0) {
+          resultsDiv.innerHTML = "<div class='card'>No matching numeric data series found.</div>";
+          return;
+        }
+
+        renderResults(data);
+      } catch (error) {
+        resultsDiv.innerHTML = "<div class='card error'>Error: " + escapeHtml(error.message) + "</div>";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Search";
+      }
+    }
+
+    async function interpretQuery(query) {
+      try {
+        const response = await fetch("/api/interpret-query?q=" + encodeURIComponent(query));
+        const data = await response.json();
+
+        if (!response.ok || data.error) {
+          return {
+            originalQuery: query,
+            searchQuery: query,
+            aiUsed: false,
+            warning: data.error || "AI interpretation failed; used original query."
+          };
+        }
+
+        return data;
+      } catch (error) {
+        return {
+          originalQuery: query,
+          searchQuery: query,
+          aiUsed: false,
+          warning: "AI interpretation unavailable; used original query."
+        };
+      }
+    }
+
+    function renderResults(data) {
+      const s = data.selectedSeries;
+      const points = s.points || [];
+      const interpretation = data.interpretation || {};
+
+      let aiHtml = "";
+
+      if (interpretation.aiUsed) {
+        aiHtml = `
+          <div class="ai-box">
+            <strong>AI interpreted your query as:</strong><br>
+            Original query: ${escapeHtml(data.originalQuery || "")}<br>
+            Search query sent to EIA: ${escapeHtml(interpretation.searchQuery || "")}<br>
+            Country: ${escapeHtml(interpretation.country || "")}<br>
+            Topic: ${escapeHtml(interpretation.topic || "")}
+          </div>
+        `;
+      } else if (interpretation.warning) {
+        aiHtml = `
+          <div class="ai-box">
+            <strong>AI interpretation note:</strong><br>
+            ${escapeHtml(interpretation.warning)}
+          </div>
+        `;
+      }
+
+      let html = `
+        <div class="card">
+          <h2>${escapeHtml(s.title)}</h2>
+          <div class="small">
+            Country: ${escapeHtml(s.country)} (${escapeHtml(s.countryCode)})<br>
+            Unit: ${escapeHtml(s.unit)}<br>
+            Source: ${escapeHtml(data.source)}<br>
+            ${escapeHtml(data.note || "")}
+          </div>
+
+          ${aiHtml}
+
+          <canvas id="chart" aria-label="Line chart of latest data points"></canvas>
+
+          <h3>Latest ${points.length} annual observations</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th>Value</th>
+                <th>Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      points.forEach(point => {
+        html += `
+          <tr>
+            <td>${escapeHtml(point.period)}</td>
+            <td>${formatNumber(point.value)}</td>
+            <td>${escapeHtml(s.unit)}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h3>Other matching EIA variables</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Variable</th>
+                <th>Latest period</th>
+                <th>Latest value</th>
+                <th>Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+      (data.variables || []).slice(0, 15).forEach(variable => {
+        html += `
+          <tr>
+            <td>${escapeHtml(variable.label)}</td>
+            <td>${escapeHtml(variable.latestPeriod)}</td>
+            <td>${formatNumber(variable.latestValue)}</td>
+            <td>${escapeHtml(variable.unit)}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      document.getElementById("results").innerHTML = html;
+      drawChart(points, s.unit);
+    }
+
+    function drawChart(points, unit) {
+      const canvas = document.getElementById("chart");
+      const ctx = canvas.getContext("2d");
+      const width = canvas.clientWidth;
+      const height = 340;
+      const ratio = window.devicePixelRatio || 1;
+
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      ctx.scale(ratio, ratio);
+      ctx.clearRect(0, 0, width, height);
+
+      const values = points.map(point => Number(point.value)).filter(Number.isFinite);
+
+      if (values.length === 0) {
+        ctx.fillText("No numeric data to graph.", 20, 30);
+        return;
+      }
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+
+      const left = 72;
+      const right = 24;
+      const top = 28;
+      const bottom = 58;
+
+      const chartWidth = width - left - right;
+      const chartHeight = height - top - bottom;
+
+      function x(index) {
+        if (points.length === 1) return left + chartWidth / 2;
+        return left + (index / (points.length - 1)) * chartWidth;
+      }
+
+      function y(value) {
+        return top + chartHeight - ((value - min) / range) * chartHeight;
+      }
+
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#334155";
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left, top + chartHeight);
+      ctx.lineTo(left + chartWidth, top + chartHeight);
+      ctx.stroke();
+
+      ctx.fillText(formatNumber(max), 8, top + 5);
+      ctx.fillText(formatNumber(min), 8, top + chartHeight);
+      ctx.fillText(unit, left, 16);
+
+      ctx.beginPath();
+
+      points.forEach((point, index) => {
+        const px = x(index);
+        const py = y(Number(point.value));
+
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+
+      ctx.strokeStyle = "#1d4ed8";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      points.forEach((point, index) => {
+        const px = x(index);
+        const py = y(Number(point.value));
+
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "#1d4ed8";
+        ctx.fill();
+
+        ctx.fillStyle = "#334155";
+        ctx.fillText(point.period, px - 16, top + chartHeight + 24);
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatNumber(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "";
+      return number.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    }
+
+    document.getElementById("searchBox").addEventListener("keydown", function(event) {
+      if (event.key === "Enter") searchEIA();
+    });
+  </script>
+</body>
+</html>
+    input {
+      flex: 1;
+      padding: 13px;
+      font-size: 16px;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+    }
+
+    button {
+      padding: 13px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border: 0;
+      border-radius: 8px;
+      background: #1d4ed8;
+      color: white;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #1e40af;
+    }
+
     .card {
       background: white;
       border: 1px solid #bfdbfe;
