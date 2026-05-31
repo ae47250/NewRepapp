@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>EIA Data Search</title>
+</head>
+<body>
+  <h1>EIA Data Search</h1>
+
+  <p>Use the box below to search for energy data from the U.S. Energy Information Administration.</p>
+
+  <input id="searchBox" type="text" placeholder="Example: oil prices, electricity, Jordan energy consumption" style="width: 80%; padding: 10px;">
+  <button onclick="searchEIA()">Search</button>
+
+  <pre id="results" style="white-space: pre-wrap; margin-top: 20px;"></pre>
+
+  <script>
+    async function searchEIA() {
+      const query = document.getElementById("searchBox").value;
+      const resultsBox = document.getElementById("results");
+
+      resultsBox.textContent = "Searching...";
+
+      try {
+        const response = await fetch("/api/search-eia?q=" + encodeURIComponent(query));
+        const data = await response.json();
+
+        resultsBox.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        resultsBox.textContent = "Error: " + error.message;
+      }
+    }
+  </script>
+</body>
+</html>
