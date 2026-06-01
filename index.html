@@ -654,6 +654,278 @@
           const value = pointMap.get(period);
           if (!Number.isFinite(value)) {
             started = false;
+   
+      try {
+        data = await response.json();
+      } catch {
+        throw new Error("The backend returned a non-JSON response. Check the Vercel function logs.");
+      }
+
+      if (!response.ok || data.error) {
+        throw new Error(data.userMessage || data.error || `Request failed with status ${response.status}.`);
+      }
+
+      return data;
+    }
+
+    function renderData(data) {
+      if (data.needsCountry || data.userMessage && !data.selectedSeries && !Array.isArray(data.series)) {
+        showStatus(data.userMessage || data.message || "No matching result was found.", true);
+        return;
+      }
+
+      showStatus(data.note || "Search complete.");
+
+      if (data.mode === "comparison") {
+        renderComparison(data);
+      } else {
+        renderSingle(data);
+      }
+    }
+
+    function renderSingle(data) {
+      const series = data.selectedSeries;
+      const results = document.getElementById("results");
+
+      if (!series || !Array.isArray(series.points) || series.points.length === 0) {
+        results.innerHTML = `<div class="card error">${escapeHtml(data.userMessage || "No matching numeric data series found.")}</div>`;
+        return;
+      }
+
+      state.selected = series;
+      state.chartSeries = [{ name: series.country, unit: series.unit, points: series.chartPoints || series.points.slice(-20) }];
+
+      results.innerHTML = `
+        <article class="card">
+          <h2>${escapeHtml(series.title)}</h2>
+          <div class="muted">${escapeHtml(series.country)} (${escapeHtml(series.countryCode)}) · ${escapeHtml(series.frequency)} · Source: ${escapeHtml(data.source || "EIA")}</div>
+          ${renderStats(series)}
+          <div class="toolbar">
+            <button class="secondary-button" type="button" onclick="downloadCsv()">Download selected data as CSV</button>
+          </div>
+          <canvas id="chart" aria-label="Line chart"></canvas>
+          <div id="legend" class="legend"></div>
+        </article>
+        ${renderObservationTable(series.points, series.unit)}
+        ${renderVariablesTable(data.variables || [], data.intent)}
+      `;
+
+      drawChart(state.chartSeries, series.unit);
+      renderLegend(state.chartSeries);
+    }
+
+    function renderComparison(data) {
+      const seriesList = (data.series || []).filter(series => Array.isArray(series.points) && series.points.length > 0);
+      const results = document.getElementById("results");
+
+      if (seriesList.length === 0) {
+        results.innerHTML = `<div class="card error">${escapeHtml(data.userMessage || "No comparable data were found.")}</div>`;
+        return;
+      }
+
+      const selectedVariable = data.selectedVariable || seriesList[0];
+      state.selected = selectedVariable;
+      state.chartSeries = seriesList.map(series => ({
+        name: `${series.country} (${series.countryCode})`,
+        unit: series.unit,
+        points: series.chartPoints || series.points.slice(-20),
+        allPoints: series.points,
+        country: series.country,
+        countryCode: series.countryCode,
+        title: series.title
+      }));
+
+      results.innerHTML = `
+        <article class="card">
+          <h2>Comparison: ${escapeHtml(selectedVariable.title || `${selectedVariable.product} — ${selectedVariable.activity}`)}</h2>
+          <div class="muted">Same EIA product/activity/unit across countries where available · Unit: ${escapeHtml(selectedVariable.unit || seriesList[0].unit)}</div>
+          <div class="toolbar">
+            <button class="secondary-button" type="button" onclick="downloadCsv()">Download comparison data as CSV</button>
+          </div>
+          <canvas id="chart" aria-label="Comparison line chart"></canvas>
+          <div id="legend" class="legend"></div>
+        </article>
+        ${renderComparisonTable(seriesList)}
+        ${renderVariablesTable(data.variables || [], data.intent)}
+      `;
+
+      drawChart(state.chartSeries, selectedVariable.unit || seriesList[0].unit);
+      renderLegend(state.chartSeries);
+    }
+
+    function renderStats(series) {
+      return `
+        <div class="stats">
+          <div class="stat"><div class="stat-label">Coverage</div><div class="stat-value">${escapeHtml(formatCoverage(series.coverage))}</div></div>
+          <div class="stat"><div class="stat-label">Latest period</div><div class="stat-value">${escapeHtml(series.latestPeriod)}</div></div>
+          <div class="stat"><div class="stat-label">Latest value</div><div class="stat-value">${formatNumber(series.latestValue)}</div></div>
+          <div class="stat"><div class="stat-label">Unit</div><div class="stat-value">${escapeHtml(series.unit)}</div></div>
+        </div>
+      `;
+    }
+
+    function renderObservationTable(points, unit) {
+      const rows = [...points].slice().reverse().map(point => `
+        <tr>
+          <td>${escapeHtml(point.period)}</td>
+          <td>${formatNumber(point.value)}</td>
+          <td>${escapeHtml(unit)}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <article class="card">
+          <h3>Observations</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Period</th><th>Value</th><th>Unit</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderComparisonTable(seriesList) {
+      const rows = seriesList.map(series => `
+        <tr>
+          <td>${escapeHtml(series.country)}</td>
+          <td>${escapeHtml(series.countryCode)}</td>
+          <td>${escapeHtml(formatCoverage(series.coverage))}</td>
+          <td>${escapeHtml(series.latestPeriod)}</td>
+          <td>${formatNumber(series.latestValue)}</td>
+          <td>${escapeHtml(series.unit)}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <article class="card">
+          <h3>Comparison summary</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Country</th><th>ISO</th><th>Coverage</th><th>Latest period</th><th>Latest value</th><th>Unit</th></tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </article>
+      `;
+    }
+
+    function renderVariablesTable(variables, intent) {
+      if (!Array.isArray(variables) || variables.length === 0) return "";
+
+      const countryCodes = intent?.countryCodes || [];
+      const rows = variables.map(variable => `
+        <tr>
+          <td><button class="ghost-button" type="button" data-select-series="1" data-country-code="${escapeAttr(variable.countryCode)}" data-product-id="${escapeAttr(variable.productId)}" data-activity-id="${escapeAttr(variable.activityId)}" data-unit-facet="${escapeAttr(variable.unitFacet)}">Graph</button></td>
+          <td>${escapeHtml(variable.country || "")}</td>
+          <td>${escapeHtml(variable.countryCode || countryCodes[0] || "")}</td>
+          <td>${escapeHtml(variable.label)}</td>
+          <td>${escapeHtml(variable.coverage || "")}</td>
+          <td>${escapeHtml(variable.frequency || "annual")}</td>
+          <td>${escapeHtml(variable.unit || "")}</td>
+          <td>${escapeHtml(variable.productId)} / ${escapeHtml(variable.activityId)} / ${escapeHtml(variable.unitFacet)}</td>
+        </tr>
+      `).join("");
+
+      return `
+        <article class="card">
+          <h3>Matching EIA variables</h3>
+          <p class="muted">Coverage below is calculated from actual observations for these displayed series.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Select</th>
+                  <th>Country</th>
+                  <th>ISO</th>
+                  <th>Variable</th>
+                  <th>Coverage</th>
+                  <th>Frequency</th>
+                  <th>Unit</th>
+                  <th>Indicator code</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </article>
+      `;
+    }
+
+    function drawChart(seriesList, unit) {
+      const canvas = document.getElementById("chart");
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight || 360;
+      const ratio = window.devicePixelRatio || 1;
+
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const allPoints = seriesList.flatMap(series => series.points || []);
+      const values = allPoints.map(point => Number(point.value)).filter(Number.isFinite);
+      const periods = Array.from(new Set(allPoints.map(point => String(point.period)))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+      if (values.length === 0 || periods.length === 0) {
+        ctx.fillText("No numeric data to graph.", 20, 30);
+        return;
+      }
+
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || Math.abs(max) || 1;
+      const left = 76;
+      const right = 30;
+      const top = 30;
+      const bottom = 62;
+      const chartWidth = Math.max(10, width - left - right);
+      const chartHeight = Math.max(10, height - top - bottom);
+
+      const x = period => {
+        const index = periods.indexOf(String(period));
+        if (periods.length === 1) return left + chartWidth / 2;
+        return left + (index / (periods.length - 1)) * chartWidth;
+      };
+
+      const y = value => top + chartHeight - ((Number(value) - min) / range) * chartHeight;
+
+      ctx.font = "12px Arial";
+      ctx.fillStyle = "#334155";
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1;
+
+      ctx.beginPath();
+      ctx.moveTo(left, top);
+      ctx.lineTo(left, top + chartHeight);
+      ctx.lineTo(left + chartWidth, top + chartHeight);
+      ctx.stroke();
+
+      ctx.fillText(formatNumber(max), 8, top + 4);
+      ctx.fillText(formatNumber(min), 8, top + chartHeight);
+      ctx.fillText(unit || "Value", left, 16);
+
+      periods.forEach((period, index) => {
+        if (index % Math.ceil(periods.length / 8) !== 0 && index !== periods.length - 1) return;
+        ctx.fillText(period, x(period) - 14, top + chartHeight + 24);
+      });
+
+      seriesList.forEach((series, seriesIndex) => {
+        const color = palette[seriesIndex % palette.length];
+        const pointMap = new Map((series.points || []).map(point => [String(point.period), Number(point.value)]));
+        let started = false;
+
+        ctx.beginPath();
+        periods.forEach(period => {
+          const value = pointMap.get(period);
+          if (!Number.isFinite(value)) {
+            started = false;
          line-height: 1.05;
     }
 
