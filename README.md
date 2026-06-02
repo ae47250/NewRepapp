@@ -85,6 +85,17 @@ api/interpret-query.js
 
 Vercel will serve `index.html` as the website and the files inside `api` as backend routes.
 
+## Smoke tests
+
+After deploying, these full web addresses should return JSON:
+
+```text
+https://eia-data-search.vercel.app/api/interpret-query?q=Brazil%20energy%20consumption
+https://eia-data-search.vercel.app/api/search-eia?q=Brazil%20energy%20consumption
+```
+
+The homepage should also accept the search phrase `Brazil energy consumption` and display a selected series, chart, observations, and matching variables.
+
 ## Backend routes
 
 ### `/api/search-eia`
