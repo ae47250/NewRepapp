@@ -16,6 +16,7 @@ The Vercel backend keeps the EIA API key private, calls the EIA API, identifies 
 ```text
 index.html
 README.md
+package.json
 api/
   search-eia.js
   interpret-query.js
@@ -34,6 +35,10 @@ The main Vercel backend function. It reads the hidden `EIA_API_KEY`, calls the E
 ### `api/interpret-query.js`
 
 The query interpreter. It reads plain-language requests and identifies the likely country, fuel/product type, activity type, and frequency.
+
+### `package.json`
+
+Project metadata. It declares `type: module` so Node and Vercel treat the JavaScript API route files as ES modules.
 
 ### `README.md`
 
@@ -54,16 +59,18 @@ Do not paste the EIA API key into `index.html`. Do not commit the key to GitHub.
 1. Create a GitHub repository.
 2. Add `index.html` in the root of the repository.
 3. Add `README.md` in the root of the repository.
-4. Create an `api` folder.
-5. Add `search-eia.js` inside `api`.
-6. Add `interpret-query.js` inside `api`.
-7. Commit the files.
+4. Add `package.json` in the root of the repository.
+5. Create an `api` folder.
+6. Add `search-eia.js` inside `api`.
+7. Add `interpret-query.js` inside `api`.
+8. Commit the files.
 
 The repository should look exactly like this:
 
 ```text
 index.html
 README.md
+package.json
 api/search-eia.js
 api/interpret-query.js
 ```
